@@ -615,40 +615,104 @@ section[id]{scroll-margin-top:72px}
   }), { rootMargin: '-45% 0px -50% 0px' });
   document.querySelectorAll('main section[id]').forEach(s => so.observe(s));
 
-  /* Rotierende Punktewolke hinter dem Porträt */
+  /* Planet hinter dem Porträt: prozedurale Oberfläche, Licht von links oben, Ring und Sterne */
   const cv = document.getElementById('globe'), ctx = cv.getContext('2d');
-  const N = 1400, pts = [];
-  for (let i = 0; i < N; i++) {
-    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = Math.PI * (3 - Math.sqrt(5)) * i;
-    pts.push([Math.cos(th) * r, y, Math.sin(th) * r]);
+  // Rauschen (3D Value Noise) für eine Oberfläche ohne Naht
+  const P = new Uint8Array(512); { const p = [...Array(256).keys()]; let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+    for (let i = 0; i < 512; i++) P[i] = p[i & 255]; }
+  const fade = t => t * t * (3 - 2 * t), lerp = (a, b, t) => a + (b - a) * t;
+  const h3 = (x, y, z) => P[P[P[x & 255] + (y & 255)] + (z & 255)] / 255;
+  function noise(x, y, z) {
+    const X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z), u = fade(x - X), v = fade(y - Y), w = fade(z - Z);
+    return lerp(lerp(lerp(h3(X,Y,Z), h3(X+1,Y,Z), u), lerp(h3(X,Y+1,Z), h3(X+1,Y+1,Z), u), v),
+                lerp(lerp(h3(X,Y,Z+1), h3(X+1,Y,Z+1), u), lerp(h3(X,Y+1,Z+1), h3(X+1,Y+1,Z+1), u), v), w);
   }
-  let W, H, R, rot = 0, tilt = -.25, tx = 0, ty = 0, visible = true;
+  const fbm = (x, y, z) => { let f = 0, a = .5; for (let o = 0; o < 5; o++) { f += a * noise(x, y, z); x *= 2.03; y *= 2.03; z *= 2.03; a *= .5; } return f; };
+
+  // Oberflächentextur (warme Bänder in Bernstein- und Brauntönen)
+  const TW = 512, TH = 256, tex = new Float32Array(TW * TH * 3);
+  const stops = [[.00,[38,22,14]],[.30,[92,52,26]],[.52,[176,104,52]],[.70,[226,152,86]],[.86,[240,196,140]],[1,[250,226,190]]];
+  const ramp = t => { t = Math.min(1, Math.max(0, t)); for (let i = 1; i < stops.length; i++) if (t <= stops[i][0]) {
+      const [a0, c0] = stops[i-1], [a1, c1] = stops[i], k = (t - a0) / (a1 - a0); return [lerp(c0[0],c1[0],k), lerp(c0[1],c1[1],k), lerp(c0[2],c1[2],k)]; } return stops[5][1]; };
+  for (let j = 0; j < TH; j++) {
+    const lat = (j / (TH - 1) - .5) * Math.PI;
+    for (let i = 0; i < TW; i++) {
+      const lon = i / TW * Math.PI * 2, x = Math.cos(lat) * Math.cos(lon), y = Math.sin(lat), z = Math.cos(lat) * Math.sin(lon);
+      const turb = fbm(x * 2.2 + 3, y * 2.2, z * 2.2 + 1);
+      const band = Math.sin(y * 13 + turb * 6.5) * .5 + .5;
+      const detail = fbm(x * 7, y * 18, z * 7);
+      let t = band * .62 + detail * .38;
+      const storm = Math.exp(-(((lon - 4.1) ** 2) * 9 + ((lat + .38) ** 2) * 60)); // ein heller Sturmfleck
+      t = t * (1 - storm) + .95 * storm;
+      const c = ramp(t), k = (j * TW + i) * 3; tex[k] = c[0]; tex[k+1] = c[1]; tex[k+2] = c[2];
+    }
+  }
+
+  let W, H, R, cx, cy, S, img, look, stars = [], spin = 0, tx = 0, ty = 0, visible = true;
+  const off = document.createElement('canvas'), octx = off.getContext('2d');
+  const tilt = -.32, L = (() => { const v = [-.62, -.52, .58], n = Math.hypot(...v); return v.map(a => a / n); })();
   function size() {
     const d = Math.min(devicePixelRatio || 1, 2);
     W = cv.clientWidth; H = cv.clientHeight; cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0);
-    R = Math.min(W, H) * .44;
-  }
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
-    const cr = Math.cos(rot + tx), sr = Math.sin(rot + tx), ct = Math.cos(tilt + ty), st = Math.sin(tilt + ty);
-    for (const [x, y, z] of pts) {
-      const x1 = x * cr - z * sr, z1 = x * sr + z * cr;
-      const y2 = y * ct - z1 * st, z2 = y * st + z1 * ct;
-      if (z2 < -.15) continue;
-      const a = .12 + (z2 + 1) * .38;
-      ctx.fillStyle = `rgba(240,160,85,${a.toFixed(3)})`;
-      const s = .6 + (z2 + 1) * .55;
-      ctx.fillRect(W / 2 + x1 * R, H * .46 + y2 * R, s, s);
+    R = Math.min(W, H) * .3; cx = W / 2; cy = H * .4;
+    S = Math.min(460, Math.round(R * 2 * d)); off.width = off.height = S; img = octx.createImageData(S, S);
+    // Nachschlagetabellen pro Pixel: Breiten-/Längengrad und Beleuchtung
+    look = []; const ct = Math.cos(tilt), st = Math.sin(tilt);
+    for (let py = 0; py < S; py++) for (let px = 0; px < S; px++) {
+      const nx = (px + .5) / S * 2 - 1, ny = (py + .5) / S * 2 - 1, rr = nx * nx + ny * ny;
+      if (rr > 1) continue;
+      const nz = Math.sqrt(1 - rr), sy = -ny;
+      const rx = nx * ct - sy * st, ry = nx * st + sy * ct;          // Achsneigung
+      const lat = Math.asin(Math.max(-1, Math.min(1, ry))), lon = Math.atan2(rx, nz);
+      const diff = Math.max(0, nx * L[0] + sy * -L[1] + nz * L[2]);
+      const rim = Math.pow(1 - nz, 3);
+      const edge = Math.min(1, (1 - Math.sqrt(rr)) * S * .5);         // weiche Kante
+      look.push(py * S + px, lon / (Math.PI * 2) * TW, (lat / Math.PI + .5) * (TH - 1), diff, rim, edge);
     }
+    stars = Array.from({ length: Math.round(W * H / 2600) }, () => [Math.random() * W, Math.random() * H, Math.random() * .9 + .2, Math.random() * 6.28]);
   }
-  function loop() { if (visible) { rot += .0016; draw(); } requestAnimationFrame(loop); }
-  size(); addEventListener('resize', size);
-  if (reduce) draw(); else {
+  function ring(front) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
+    const bands = [[1.38,.10,1.2],[1.46,.22,2.4],[1.55,.32,3.2],[1.63,.14,1.4],[1.72,.24,2.2],[1.80,.08,1]];
+    for (const [r, a, w] of bands) {
+      ctx.beginPath(); ctx.ellipse(0, 0, R * r, R * r * .22, 0, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2);
+      ctx.strokeStyle = `rgba(240,170,105,${a})`; ctx.lineWidth = w; ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function draw(t) {
+    ctx.clearRect(0, 0, W, H);
+    for (const [x, y, a, p] of stars) { ctx.fillStyle = `rgba(237,235,231,${(a * (.55 + .45 * Math.sin(t * .001 + p))).toFixed(3)})`; ctx.fillRect(x, y, 1, 1); }
+    // Atmosphäre
+    const g = ctx.createRadialGradient(cx, cy, R * .9, cx, cy, R * 1.35);
+    g.addColorStop(0, 'rgba(240,160,85,.22)'); g.addColorStop(1, 'rgba(240,160,85,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.35, 0, 7); ctx.fill();
+    ring(false);
+    // Planetenoberfläche
+    const d = img.data, shift = (spin + tx) * TW;
+    for (let i = 0; i < look.length; i += 6) {
+      const o = look[i] * 4; let u = (look[i+1] + shift) % TW; if (u < 0) u += TW;
+      const k = ((look[i+2] | 0) * TW + (u | 0)) * 3, diff = look[i+3], rim = look[i+4];
+      const lit = .05 + diff * 1.05;
+      d[o]   = Math.min(255, tex[k] * lit + rim * 140 * diff + rim * 30);
+      d[o+1] = Math.min(255, tex[k+1] * lit + rim * 80 * diff + rim * 14);
+      d[o+2] = Math.min(255, tex[k+2] * lit + rim * 40 * diff + rim * 6);
+      d[o+3] = 255 * look[i+5];
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.drawImage(off, cx - R, cy - R + ty * 6, R * 2, R * 2);
+    ring(true);
+  }
+  function loop(t) { if (visible) { spin += .00045; draw(t); } requestAnimationFrame(loop); }
+  size(); addEventListener('resize', () => { size(); draw(0); });
+  if (reduce) draw(0); else {
     new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(cv);
     document.querySelector('.hero').addEventListener('pointermove', e => {
-      tx = (e.clientX / innerWidth - .5) * .6; ty = (e.clientY / innerHeight - .5) * .3;
+      tx = (e.clientX / innerWidth - .5) * .08; ty = (e.clientY / innerHeight - .5);
     });
-    loop();
+    requestAnimationFrame(loop);
   }
 })();
 </script>
