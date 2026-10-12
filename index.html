@@ -100,13 +100,25 @@ section[id]{scroll-margin-top:72px}
 .corners i:nth-child(4){right:0;bottom:0;border-right-width:1px;border-bottom-width:1px}
 .hero-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:center;min-height:min(78vh,720px)}
 .hero-visual{position:relative;aspect-ratio:1/1;max-width:560px;justify-self:center;width:100%}
-#globe{position:absolute;inset:-4% -10% 0 -10%;width:120%;height:104%}
 .hero{overflow-x:clip}
-.motion-cap{position:absolute;left:0;top:-2%;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em}
-.motion-cap i{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(240,160,85,.15)}
-.motion-cap b{font-weight:500;color:var(--text);transition:opacity .3s}
-.motion-cap.swap b{opacity:0}
-.motion-cap span,.motion-cap em{display:none}
+/* ---------- Intro beim Laden ---------- */
+.loader{position:fixed;inset:0;z-index:200;background:var(--bg);display:grid;grid-template-rows:auto 1fr auto;padding:24px var(--pad);
+  clip-path:inset(0 0 0 0);transition:clip-path 1s cubic-bezier(.76,0,.24,1)}
+.loader.out{clip-path:inset(0 0 100% 0)}
+.loader-top,.loader-bottom{display:flex;justify-content:space-between;align-items:center;gap:16px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.loader-top b{color:var(--text);font-weight:500}
+.loader-stage{display:grid;place-items:center;min-height:0}
+#intro-canvas{width:min(1000px,100%);aspect-ratio:16/8;max-height:100%}
+.loader-cap{display:flex;align-items:center;gap:12px;font-size:clamp(15px,1.6vw,20px);font-weight:500;letter-spacing:-.01em;color:var(--text)}
+.loader-cap span{color:var(--dim);transition:color .5s}
+.loader-cap span.on{color:var(--text)}
+.loader-cap i{display:block;width:clamp(40px,8vw,120px);height:1px;background:var(--border);position:relative;overflow:hidden}
+.loader-cap i::after{content:"";position:absolute;inset:0;background:var(--accent);transform:scaleX(var(--p,0));transform-origin:left}
+.loader-skip{font:inherit;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer}
+.loader-skip:hover{color:var(--text);border-color:#3a3631}
+.intro-active body{overflow:hidden}
+.intro-active .portrait img{animation-play-state:paused}
+@media (max-width:640px){#intro-canvas{aspect-ratio:4/3}.loader-cap{font-size:14px}}
 .hero-visual::after{content:"";position:absolute;left:50%;bottom:-2%;width:70%;height:10%;translate:-50% 0;border-radius:50%;background:radial-gradient(closest-side,rgba(240,160,85,.18),transparent);filter:blur(8px);pointer-events:none}
 .portrait{position:absolute;left:50%;bottom:0;width:66%;translate:-50% 0;margin:0;
   -webkit-mask:linear-gradient(#000 82%,transparent);mask:linear-gradient(#000 82%,transparent)}
@@ -288,6 +300,16 @@ section[id]{scroll-margin-top:72px}
 </head>
 <body>
 <a class="skip" href="#inhalt">Zum Inhalt springen</a>
+<!-- ===================== INTRO BEIM LADEN =====================
+     Läuft einmal pro Besuch (ca. 4 Sekunden), per Klick überspringbar. -->
+<div class="loader" id="intro" aria-hidden="true">
+  <div class="loader-top"><span><b>Claudio Vinci</b>, Business AI</span><span>FHNW</span></div>
+  <div class="loader-stage"><canvas id="intro-canvas"></canvas></div>
+  <div class="loader-bottom">
+    <p class="loader-cap"><span id="cap-a" class="on">Geschäftsprozess</span><i id="cap-bar"></i><span id="cap-b">KI-Modell</span></p>
+    <button class="loader-skip" type="button" id="intro-skip">Überspringen</button>
+  </div>
+</div>
 
 <!-- ===================== LAUFBAND ===================== -->
 <div class="ticker" aria-hidden="true">
@@ -326,8 +348,6 @@ section[id]{scroll-margin-top:72px}
     <div class="corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div class="hero-grid">
       <div class="hero-visual">
-        <canvas id="globe" aria-hidden="true"></canvas>
-        <p class="motion-cap" id="motion-cap" aria-hidden="true"><i></i><b>Geschäftsprozess</b><span>wird zum</span><em>KI-Modell</em></p>
         <!-- ===== FOTO =====
              claudio.png muss im selben Ordner wie index.html liegen
              (freigestellt, ohne Hintergrund). -->
@@ -613,7 +633,7 @@ section[id]{scroll-margin-top:72px}
 
   /* Einblenden */
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .15 });
-  document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
+  const startReveals = () => document.querySelectorAll('[data-reveal]').forEach(el => io.observe(el));
 
   /* Aktiver Menüpunkt */
   const links = [...document.querySelectorAll('.nav-links a')];
@@ -622,9 +642,9 @@ section[id]{scroll-margin-top:72px}
   }), { rootMargin: '-45% 0px -50% 0px' });
   document.querySelectorAll('main section[id]').forEach(s => so.observe(s));
 
-  /* Motion im Hintergrund: ein Geschäftsprozess (BPMN) verwandelt sich in ein neuronales Netz und zurück */
-  const cv = document.getElementById('globe'), ctx = cv.getContext('2d');
-  const cap = document.getElementById('motion-cap');
+  /* Intro: ein Geschäftsprozess (BPMN) verwandelt sich in ein neuronales Netz */
+  const intro = document.getElementById('intro'), cv = document.getElementById('intro-canvas'), ctx = cv.getContext('2d');
+  const capA = document.getElementById('cap-a'), capB = document.getElementById('cap-b'), bar = document.getElementById('cap-bar');
   const INK = '237,235,231', AMB = '240,160,85';
   const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -710,19 +730,19 @@ section[id]{scroll-margin-top:72px}
     // Impulse
     const act = new Float32Array(N.length);
     if (token && m < .05) {
-      const r = token.route, f = Math.min(r.length - 1.0001, (now - token.t) / 900), k = Math.floor(f), e = f - k;
+      const r = token.route, f = Math.min(r.length - 1.0001, (now - token.t) / SEG), k = Math.floor(f), e = f - k;
       const [x1, y1] = pos(r[k]), [x2, y2] = pos(r[k + 1]);
       const tx = N[r[k]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? x1 : lerp(x1, x2, (e - .5) * 2)) : lerp(x1, x2, e);
       const ty = N[r[k]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? lerp(y1, y2, e * 2) : y2) : (N[r[k+1]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? y1 : lerp(y1, y2, (e - .5) * 2)) : lerp(y1, y2, e));
       const tx2 = N[r[k+1]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? lerp(x1, x2, e * 2) : x2) : tx;
       dot(tx2, ty, 1);
       act[r[k]] = 1 - e; act[r[k + 1]] = e;
-      if ((now - token.t) / 900 >= r.length - 1) token = null;
+      if ((now - token.t) / SEG >= r.length - 1) token = null;
     }
     if (m > .95) {
-      if (now - last > 160) { last = now; const e = net[(Math.random() * net.length) | 0]; if (N[e[0]].layer === 0 || Math.random() < .5) pulses.push({ e, t: now }); }
+      if (now - last > 70) { last = now; const e = net[(Math.random() * net.length) | 0]; if (N[e[0]].layer === 0 || Math.random() < .5) pulses.push({ e, t: now }); }
       pulses = pulses.filter(p => {
-        const f = (now - p.t) / 700; if (f >= 1) { if (N[p.e[1]].layer < layers.length - 1 && Math.random() < .55) { const nx = net.filter(q => q[0] === p.e[1]); pulses.push({ e: nx[(Math.random() * nx.length) | 0], t: now }); } return false; }
+        const f = (now - p.t) / 420; if (f >= 1) { if (N[p.e[1]].layer < layers.length - 1 && Math.random() < .55) { const nx = net.filter(q => q[0] === p.e[1]); pulses.push({ e: nx[(Math.random() * nx.length) | 0], t: now }); } return false; }
         const [x1, y1] = pos(p.e[0]), [x2, y2] = pos(p.e[1]);
         ctx.strokeStyle = `rgba(${AMB},${.35 * (1 - Math.abs(f - .5) * 2)})`; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         dot(lerp(x1, x2, f), lerp(y1, y2, f), 1); act[p.e[0]] = Math.max(act[p.e[0]], 1 - f); act[p.e[1]] = Math.max(act[p.e[1]], f); return true;
@@ -736,20 +756,36 @@ section[id]{scroll-margin-top:72px}
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, U * .03, 0, 7); ctx.fill();
     ctx.fillStyle = `rgba(255,236,210,${a})`; ctx.beginPath(); ctx.arc(x, y, U * .0055, 0, 7); ctx.fill();
   }
-  // Ablauf in Phasen (Sekunden): Prozess 0–7, Wechsel 7–9, Netz 9–15, Wechsel 15–17
-  const CYCLE = 17;
-  function phase(now) {
-    const s = ((now - t0) / 1000) % CYCLE;
-    m = s < 7 ? 0 : s < 9 ? ease((s - 7) / 2) : s < 15 ? 1 : 1 - ease((s - 15) / 2);
-    if (m === 0 && !token && s > .3 && s < 6.6 - 6 * .9) token = { route: routes[(Math.random() * 2) | 0], t: now };
-    if (cap) { const net = m > .5; if (cap.dataset.s !== String(net)) { cap.dataset.s = net; cap.classList.add('swap');
-      setTimeout(() => { cap.querySelector('b').textContent = net ? 'KI-Modell' : 'Geschäftsprozess'; cap.classList.remove('swap'); }, 300); } }
+  // Zeitplan (Sekunden): Prozess 0–1.9, Wechsel 1.9–2.8, Netz 2.8–3.9, danach öffnet sich die Seite
+  const SEG = 250, T_MORPH = 1.9, T_NET = 2.8, T_END = 3.9;
+  let done = false, raf;
+  function finish() {
+    if (done) return; done = true;
+    intro.classList.add('out');
+    document.documentElement.classList.remove('intro-active');
+    startReveals();
+    try { sessionStorage.setItem('introSeen', '1'); } catch (e) {}
+    setTimeout(() => { cancelAnimationFrame(raf); intro.remove(); }, 1100);
   }
-  function loop(now) { if (visible) { phase(now); draw(now); } requestAnimationFrame(loop); }
-  size(); addEventListener('resize', () => { size(); draw(performance.now()); });
-  if (reduce) { m = 0; draw(0); } else {
-    new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(cv);
-    requestAnimationFrame(loop);
+  function loop(now) {
+    const s = (now - t0) / 1000;
+    m = s < T_MORPH ? 0 : s < T_NET ? ease((s - T_MORPH) / (T_NET - T_MORPH)) : 1;
+    if (!token && s < .2) token = { route: routes[0], t: now };
+    bar.style.setProperty('--p', Math.min(1, s / T_NET).toFixed(3));
+    capB.classList.toggle('on', m > .5); capA.classList.toggle('on', m <= .5);
+    draw(now);
+    if (s >= T_END) finish();
+    raf = requestAnimationFrame(loop);
+  }
+  let seen = false; try { seen = sessionStorage.getItem('introSeen') === '1'; } catch (e) {}
+  if (reduce || seen) { intro.remove(); startReveals(); }
+  else {
+    document.documentElement.classList.add('intro-active');
+    size(); addEventListener('resize', size);
+    document.getElementById('intro-skip').addEventListener('click', finish);
+    intro.addEventListener('click', e => { if (e.target.id !== 'intro-skip') finish(); });
+    addEventListener('keydown', e => { if (e.key === 'Escape') finish(); }, { once: true });
+    t0 = performance.now(); raf = requestAnimationFrame(loop);
   }
 })();
 </script>
