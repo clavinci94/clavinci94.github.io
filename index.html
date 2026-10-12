@@ -100,7 +100,13 @@ section[id]{scroll-margin-top:72px}
 .corners i:nth-child(4){right:0;bottom:0;border-right-width:1px;border-bottom-width:1px}
 .hero-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:center;min-height:min(78vh,720px)}
 .hero-visual{position:relative;aspect-ratio:1/1;max-width:560px;justify-self:center;width:100%}
-#globe{position:absolute;inset:0;width:100%;height:100%}
+#globe{position:absolute;inset:-4% -10% 0 -10%;width:120%;height:104%}
+.hero{overflow-x:clip}
+.motion-cap{position:absolute;left:0;top:-2%;display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.02em}
+.motion-cap i{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(240,160,85,.15)}
+.motion-cap b{font-weight:500;color:var(--text);transition:opacity .3s}
+.motion-cap.swap b{opacity:0}
+.motion-cap span,.motion-cap em{display:none}
 .hero-visual::after{content:"";position:absolute;left:50%;bottom:-2%;width:70%;height:10%;translate:-50% 0;border-radius:50%;background:radial-gradient(closest-side,rgba(240,160,85,.18),transparent);filter:blur(8px);pointer-events:none}
 .portrait{position:absolute;left:50%;bottom:0;width:66%;translate:-50% 0;margin:0;
   -webkit-mask:linear-gradient(#000 82%,transparent);mask:linear-gradient(#000 82%,transparent)}
@@ -321,6 +327,7 @@ section[id]{scroll-margin-top:72px}
     <div class="hero-grid">
       <div class="hero-visual">
         <canvas id="globe" aria-hidden="true"></canvas>
+        <p class="motion-cap" id="motion-cap" aria-hidden="true"><i></i><b>Geschäftsprozess</b><span>wird zum</span><em>KI-Modell</em></p>
         <!-- ===== FOTO =====
              claudio.png muss im selben Ordner wie index.html liegen
              (freigestellt, ohne Hintergrund). -->
@@ -615,103 +622,133 @@ section[id]{scroll-margin-top:72px}
   }), { rootMargin: '-45% 0px -50% 0px' });
   document.querySelectorAll('main section[id]').forEach(s => so.observe(s));
 
-  /* Planet hinter dem Porträt: prozedurale Oberfläche, Licht von links oben, Ring und Sterne */
+  /* Motion im Hintergrund: ein Geschäftsprozess (BPMN) verwandelt sich in ein neuronales Netz und zurück */
   const cv = document.getElementById('globe'), ctx = cv.getContext('2d');
-  // Rauschen (3D Value Noise) für eine Oberfläche ohne Naht
-  const P = new Uint8Array(512); { const p = [...Array(256).keys()]; let seed = 7;
-    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
-    for (let i = 0; i < 512; i++) P[i] = p[i & 255]; }
-  const fade = t => t * t * (3 - 2 * t), lerp = (a, b, t) => a + (b - a) * t;
-  const h3 = (x, y, z) => P[P[P[x & 255] + (y & 255)] + (z & 255)] / 255;
-  function noise(x, y, z) {
-    const X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z), u = fade(x - X), v = fade(y - Y), w = fade(z - Z);
-    return lerp(lerp(lerp(h3(X,Y,Z), h3(X+1,Y,Z), u), lerp(h3(X,Y+1,Z), h3(X+1,Y+1,Z), u), v),
-                lerp(lerp(h3(X,Y,Z+1), h3(X+1,Y,Z+1), u), lerp(h3(X,Y+1,Z+1), h3(X+1,Y+1,Z+1), u), v), w);
-  }
-  const fbm = (x, y, z) => { let f = 0, a = .5; for (let o = 0; o < 5; o++) { f += a * noise(x, y, z); x *= 2.03; y *= 2.03; z *= 2.03; a *= .5; } return f; };
+  const cap = document.getElementById('motion-cap');
+  const INK = '237,235,231', AMB = '240,160,85';
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const lerp = (a, b, t) => a + (b - a) * t;
 
-  // Oberflächentextur (warme Bänder in Bernstein- und Brauntönen)
-  const TW = 512, TH = 256, tex = new Float32Array(TW * TH * 3);
-  const stops = [[.00,[38,22,14]],[.30,[92,52,26]],[.52,[176,104,52]],[.70,[226,152,86]],[.86,[240,196,140]],[1,[250,226,190]]];
-  const ramp = t => { t = Math.min(1, Math.max(0, t)); for (let i = 1; i < stops.length; i++) if (t <= stops[i][0]) {
-      const [a0, c0] = stops[i-1], [a1, c1] = stops[i], k = (t - a0) / (a1 - a0); return [lerp(c0[0],c1[0],k), lerp(c0[1],c1[1],k), lerp(c0[2],c1[2],k)]; } return stops[5][1]; };
-  for (let j = 0; j < TH; j++) {
-    const lat = (j / (TH - 1) - .5) * Math.PI;
-    for (let i = 0; i < TW; i++) {
-      const lon = i / TW * Math.PI * 2, x = Math.cos(lat) * Math.cos(lon), y = Math.sin(lat), z = Math.cos(lat) * Math.sin(lon);
-      const turb = fbm(x * 2.2 + 3, y * 2.2, z * 2.2 + 1);
-      const band = Math.sin(y * 13 + turb * 6.5) * .5 + .5;
-      const detail = fbm(x * 7, y * 18, z * 7);
-      let t = band * .62 + detail * .38;
-      const storm = Math.exp(-(((lon - 4.1) ** 2) * 9 + ((lat + .38) ** 2) * 60)); // ein heller Sturmfleck
-      t = t * (1 - storm) + .95 * storm;
-      const c = ramp(t), k = (j * TW + i) * 3; tex[k] = c[0]; tex[k+1] = c[1]; tex[k+2] = c[2];
-    }
-  }
+  // Knoten: Position im Prozess (p), Position im Netz (n), Form im Prozess
+  // Formen: 'ev' Ereignis (Kreis), 'task' Aufgabe (Rechteck), 'gw' Entscheidung (Raute), null = nur im Netz
+  const layers = [[.10,[.22,.42,.62]],[.30,[.14,.33,.52,.71]],[.50,[.14,.33,.52,.71]],[.70,[.14,.33,.52,.71]],[.90,[.32,.52]]];
+  const N = []; layers.forEach(([x, ys], li) => ys.forEach(y => N.push({ n: [x, y], layer: li })));
+  const proc = [ // [index, x, y, form, label]
+    [0, .07, .30, 'ev', 'Start'], [3, .22, .30, 'task', 'Erfassen'], [4, .38, .30, 'gw', ''],
+    [7, .55, .16, 'task', 'Prüfen'], [8, .55, .44, 'task', 'Klären'], [11, .70, .30, 'gw', ''],
+    [12, .82, .30, 'task', 'Freigeben'], [15, .95, .30, 'ev', 'Ende']];
+  N.forEach(o => { o.p = o.n; o.form = null; o.label = ''; });
+  proc.forEach(([i, x, y, f, l]) => Object.assign(N[i], { p: [x, y], form: f, label: l }));
+  const flow = [[0,3],[3,4],[4,7],[4,8],[7,11],[8,11],[11,12],[12,15]];
+  const routes = [[0,3,4,7,11,12,15],[0,3,4,8,11,12,15]];
+  const net = []; for (let l = 0; l < layers.length - 1; l++) N.forEach((a, i) => { if (a.layer === l) N.forEach((b, j) => { if (b.layer === l + 1) net.push([i, j]); }); });
 
-  let W, H, R, cx, cy, S, img, look, stars = [], spin = 0, tx = 0, ty = 0, visible = true;
-  const off = document.createElement('canvas'), octx = off.getContext('2d');
-  const tilt = -.32, L = (() => { const v = [-.62, -.52, .58], n = Math.hypot(...v); return v.map(a => a / n); })();
+  let W, H, U, m = 0, t0 = performance.now(), visible = true, pulses = [], token = null, last = 0;
   function size() {
     const d = Math.min(devicePixelRatio || 1, 2);
     W = cv.clientWidth; H = cv.clientHeight; cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0);
-    R = Math.min(W, H) * .3; cx = W / 2; cy = H * .4;
-    S = Math.min(460, Math.round(R * 2 * d)); off.width = off.height = S; img = octx.createImageData(S, S);
-    // Nachschlagetabellen pro Pixel: Breiten-/Längengrad und Beleuchtung
-    look = []; const ct = Math.cos(tilt), st = Math.sin(tilt);
-    for (let py = 0; py < S; py++) for (let px = 0; px < S; px++) {
-      const nx = (px + .5) / S * 2 - 1, ny = (py + .5) / S * 2 - 1, rr = nx * nx + ny * ny;
-      if (rr > 1) continue;
-      const nz = Math.sqrt(1 - rr), sy = -ny;
-      const rx = nx * ct - sy * st, ry = nx * st + sy * ct;          // Achsneigung
-      const lat = Math.asin(Math.max(-1, Math.min(1, ry))), lon = Math.atan2(rx, nz);
-      const diff = Math.max(0, nx * L[0] + sy * -L[1] + nz * L[2]);
-      const rim = Math.pow(1 - nz, 3);
-      const edge = Math.min(1, (1 - Math.sqrt(rr)) * S * .5);         // weiche Kante
-      look.push(py * S + px, lon / (Math.PI * 2) * TW, (lat / Math.PI + .5) * (TH - 1), diff, rim, edge);
-    }
-    stars = Array.from({ length: Math.round(W * H / 2600) }, () => [Math.random() * W, Math.random() * H, Math.random() * .9 + .2, Math.random() * 6.28]);
+    U = Math.min(W, H);
   }
-  function ring(front) {
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt);
-    const bands = [[1.38,.10,1.2],[1.46,.22,2.4],[1.55,.32,3.2],[1.63,.14,1.4],[1.72,.24,2.2],[1.80,.08,1]];
-    for (const [r, a, w] of bands) {
-      ctx.beginPath(); ctx.ellipse(0, 0, R * r, R * r * .22, 0, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2);
-      ctx.strokeStyle = `rgba(240,170,105,${a})`; ctx.lineWidth = w; ctx.stroke();
-    }
+  const pos = i => { const o = N[i]; return [lerp(o.p[0], o.n[0], m) * W, lerp(o.p[1], o.n[1], m) * H]; };
+
+  function shape(o, x, y, active) {
+    const k = o.form ? 1 : m;                     // reine Netz-Knoten erscheinen erst im Netz
+    if (k < .02) return;
+    const circ = U * .016;
+    let w = circ * 2, h = circ * 2, r = circ, rot = 0;
+    if (o.form === 'task') { w = lerp(U * .13, circ * 2, m); h = lerp(U * .07, circ * 2, m); r = lerp(U * .012, circ, m); }
+    if (o.form === 'gw') { w = h = lerp(U * .055, circ * 2, m); r = lerp(U * .004, circ, m); rot = lerp(Math.PI / 4, 0, m); }
+    if (o.form === 'ev') { w = h = lerp(U * .045, circ * 2, m); r = w / 2; }
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(k, k);
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, r);
+    ctx.fillStyle = '#0B0A09'; ctx.fill();
+    const glow = active || 0;
+    ctx.lineWidth = o.form === 'ev' && o.label === 'Ende' ? lerp(2.2, 1, m) : 1;
+    ctx.strokeStyle = glow > .02 ? `rgba(${AMB},${.35 + glow * .65})` : `rgba(${INK},${.22 + .1 * k})`;
+    if (glow > .02) { ctx.shadowColor = `rgba(${AMB},${glow * .8})`; ctx.shadowBlur = 14 * glow; }
+    ctx.stroke(); ctx.shadowBlur = 0;
+    if (o.form === 'gw' && m < .6) { ctx.rotate(-rot); ctx.globalAlpha = 1 - m / .6; ctx.strokeStyle = `rgba(${INK},.35)`;
+      const c = w * .22; ctx.beginPath(); ctx.moveTo(-c, -c); ctx.lineTo(c, c); ctx.moveTo(c, -c); ctx.lineTo(-c, c); ctx.stroke(); ctx.globalAlpha = 1; }
     ctx.restore();
-  }
-  function draw(t) {
-    ctx.clearRect(0, 0, W, H);
-    for (const [x, y, a, p] of stars) { ctx.fillStyle = `rgba(237,235,231,${(a * (.55 + .45 * Math.sin(t * .001 + p))).toFixed(3)})`; ctx.fillRect(x, y, 1, 1); }
-    // Atmosphäre
-    const g = ctx.createRadialGradient(cx, cy, R * .9, cx, cy, R * 1.35);
-    g.addColorStop(0, 'rgba(240,160,85,.22)'); g.addColorStop(1, 'rgba(240,160,85,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 1.35, 0, 7); ctx.fill();
-    ring(false);
-    // Planetenoberfläche
-    const d = img.data, shift = (spin + tx) * TW;
-    for (let i = 0; i < look.length; i += 6) {
-      const o = look[i] * 4; let u = (look[i+1] + shift) % TW; if (u < 0) u += TW;
-      const k = ((look[i+2] | 0) * TW + (u | 0)) * 3, diff = look[i+3], rim = look[i+4];
-      const lit = .05 + diff * 1.05;
-      d[o]   = Math.min(255, tex[k] * lit + rim * 140 * diff + rim * 30);
-      d[o+1] = Math.min(255, tex[k+1] * lit + rim * 80 * diff + rim * 14);
-      d[o+2] = Math.min(255, tex[k+2] * lit + rim * 40 * diff + rim * 6);
-      d[o+3] = 255 * look[i+5];
+    if (o.label && m < .5) {
+      ctx.globalAlpha = 1 - m / .5; ctx.fillStyle = `rgba(${INK},.5)`; ctx.font = `${Math.max(9, U * .021)}px "Geist Mono", monospace`;
+      ctx.textAlign = 'center'; ctx.fillText(o.label, x, y + (o.form === 'task' ? U * .065 : U * .05)); ctx.globalAlpha = 1;
     }
-    octx.putImageData(img, 0, 0);
-    ctx.drawImage(off, cx - R, cy - R + ty * 6, R * 2, R * 2);
-    ring(true);
   }
-  function loop(t) { if (visible) { spin += .00045; draw(t); } requestAnimationFrame(loop); }
-  size(); addEventListener('resize', () => { size(); draw(0); });
-  if (reduce) draw(0); else {
+  function arrow(x1, y1, x2, y2, a) {
+    const ang = Math.atan2(y2 - y1, x2 - x1), s = U * .012;
+    ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - s * Math.cos(ang - .45), y2 - s * Math.sin(ang - .45));
+    ctx.lineTo(x2 - s * Math.cos(ang + .45), y2 - s * Math.sin(ang + .45)); ctx.closePath();
+    ctx.fillStyle = `rgba(${INK},${a})`; ctx.fill();
+  }
+  // Rand eines Knotens, damit Pfeile nicht im Knoten enden
+  const inset = (i, x, y, dx, dy) => { const o = N[i]; let r = U * .016;
+    if (m < .9) r = lerp(o.form === 'task' ? U * .065 : o.form === 'gw' ? U * .04 : U * .023, r, m);
+    const L = Math.hypot(dx, dy) || 1; return [x + dx / L * r, y + dy / L * r]; };
+
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    // Kanten des Prozesses (orthogonal gezeichnet) und des Netzes
+    if (m < .98) for (const [i, j] of flow) {
+      const [x1, y1] = pos(i), [x2, y2] = pos(j), a = .3 * (1 - m);
+      ctx.strokeStyle = `rgba(${INK},${a})`; ctx.lineWidth = 1; ctx.beginPath();
+      if (Math.abs(y1 - y2) > 2 && m < .5) {           // abknickende Linie wie in BPMN
+        const mx = N[i].form === 'gw' ? x1 : x2;
+        const [sx, sy] = N[i].form === 'gw' ? [x1, y1 + Math.sign(y2 - y1) * U * .04 * (1 - m)] : inset(i, x1, y1, 1, 0);
+        const [ex, ey] = N[j].form === 'gw' ? [x2, y2 - Math.sign(y2 - y1) * U * .04 * (1 - m)] : inset(j, x2, y2, -1, 0);
+        ctx.moveTo(sx, sy); ctx.lineTo(mx, N[i].form === 'gw' ? ey : sy); ctx.lineTo(ex, ey); ctx.stroke();
+        arrow(N[i].form === 'gw' ? sx : mx, N[i].form === 'gw' ? ey : sy, ex, ey, a + .1);
+      } else {
+        const [sx, sy] = inset(i, x1, y1, x2 - x1, y2 - y1), [ex, ey] = inset(j, x2, y2, x1 - x2, y1 - y2);
+        ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); arrow(sx, sy, ex, ey, a + .1);
+      }
+    }
+    if (m > .02) for (const [i, j] of net) {
+      const [x1, y1] = pos(i), [x2, y2] = pos(j);
+      ctx.strokeStyle = `rgba(${INK},${.09 * m})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    // Impulse
+    const act = new Float32Array(N.length);
+    if (token && m < .05) {
+      const r = token.route, f = Math.min(r.length - 1.0001, (now - token.t) / 900), k = Math.floor(f), e = f - k;
+      const [x1, y1] = pos(r[k]), [x2, y2] = pos(r[k + 1]);
+      const tx = N[r[k]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? x1 : lerp(x1, x2, (e - .5) * 2)) : lerp(x1, x2, e);
+      const ty = N[r[k]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? lerp(y1, y2, e * 2) : y2) : (N[r[k+1]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? y1 : lerp(y1, y2, (e - .5) * 2)) : lerp(y1, y2, e));
+      const tx2 = N[r[k+1]].form === 'gw' && Math.abs(y1 - y2) > 2 ? (e < .5 ? lerp(x1, x2, e * 2) : x2) : tx;
+      dot(tx2, ty, 1);
+      act[r[k]] = 1 - e; act[r[k + 1]] = e;
+      if ((now - token.t) / 900 >= r.length - 1) token = null;
+    }
+    if (m > .95) {
+      if (now - last > 160) { last = now; const e = net[(Math.random() * net.length) | 0]; if (N[e[0]].layer === 0 || Math.random() < .5) pulses.push({ e, t: now }); }
+      pulses = pulses.filter(p => {
+        const f = (now - p.t) / 700; if (f >= 1) { if (N[p.e[1]].layer < layers.length - 1 && Math.random() < .55) { const nx = net.filter(q => q[0] === p.e[1]); pulses.push({ e: nx[(Math.random() * nx.length) | 0], t: now }); } return false; }
+        const [x1, y1] = pos(p.e[0]), [x2, y2] = pos(p.e[1]);
+        ctx.strokeStyle = `rgba(${AMB},${.35 * (1 - Math.abs(f - .5) * 2)})`; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        dot(lerp(x1, x2, f), lerp(y1, y2, f), 1); act[p.e[0]] = Math.max(act[p.e[0]], 1 - f); act[p.e[1]] = Math.max(act[p.e[1]], f); return true;
+      });
+    }
+    N.forEach((o, i) => { const [x, y] = pos(i); shape(o, x, y, act[i]); });
+  }
+  function dot(x, y, a) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, U * .03);
+    g.addColorStop(0, `rgba(${AMB},${.9 * a})`); g.addColorStop(.25, `rgba(${AMB},${.35 * a})`); g.addColorStop(1, `rgba(${AMB},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, U * .03, 0, 7); ctx.fill();
+    ctx.fillStyle = `rgba(255,236,210,${a})`; ctx.beginPath(); ctx.arc(x, y, U * .0055, 0, 7); ctx.fill();
+  }
+  // Ablauf in Phasen (Sekunden): Prozess 0–7, Wechsel 7–9, Netz 9–15, Wechsel 15–17
+  const CYCLE = 17;
+  function phase(now) {
+    const s = ((now - t0) / 1000) % CYCLE;
+    m = s < 7 ? 0 : s < 9 ? ease((s - 7) / 2) : s < 15 ? 1 : 1 - ease((s - 15) / 2);
+    if (m === 0 && !token && s > .3 && s < 6.6 - 6 * .9) token = { route: routes[(Math.random() * 2) | 0], t: now };
+    if (cap) { const net = m > .5; if (cap.dataset.s !== String(net)) { cap.dataset.s = net; cap.classList.add('swap');
+      setTimeout(() => { cap.querySelector('b').textContent = net ? 'KI-Modell' : 'Geschäftsprozess'; cap.classList.remove('swap'); }, 300); } }
+  }
+  function loop(now) { if (visible) { phase(now); draw(now); } requestAnimationFrame(loop); }
+  size(); addEventListener('resize', () => { size(); draw(performance.now()); });
+  if (reduce) { m = 0; draw(0); } else {
     new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(cv);
-    document.querySelector('.hero').addEventListener('pointermove', e => {
-      tx = (e.clientX / innerWidth - .5) * .08; ty = (e.clientY / innerHeight - .5);
-    });
     requestAnimationFrame(loop);
   }
 })();
